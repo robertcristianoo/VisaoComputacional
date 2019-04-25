@@ -1,50 +1,48 @@
 from scipy import ndimage
 from scipy.ndimage.filters import convolve
-from scipy import misc
 import numpy as np
-import matplotlib.image as mpimg
 
 class Canny:
-    def __init__(self, imgs, sigma=1, kernel_size=5, weak_pixel=75, strong_pixel=255, lowthreshold=0.05,
-                 highthreshold=0.15):
-        self.imgs = imgs
-        self.imgs_final = []
-        self.img_smoothed = None
-        self.gradientMat = None
-        self.thetaMat = None
-        self.nonMaxImg = None
-        self.thresholdImg = None
-        self.weak_pixel = weak_pixel
-        self.strong_pixel = strong_pixel
+    def __init__(self, imgs, sigma=1, tam_gauss=5, pixel_fraco=75, pixel_forte=255, fraca_intensidade=0.05,
+                 forte_intensidade=0.15):
+        self.imgs = imgs #conjunto de imgs de entrada
+        self.imgs_final = [] #conjunto de imgs resultante
+        self.img_smoothed = None #imagem pós filtro gauss
+        self.gradientMat = None #imagem pós calc_gradiente
+        self.thetaMat = None #ângulo theta do gradiente
+        self.nonMaxImg = None #imagem pós max_supression
+        self.thresholdImg = None #imagem pós identificado pixeis fortes e fracos
+        self.pixel_fraco = pixel_fraco #param para identificar pixeis fracos
+        self.pixel_forte = pixel_forte #param para identificar pixeis fortes
         self.sigma = sigma
-        self.kernel_size = kernel_size
-        self.lowThreshold = lowthreshold
-        self.highThreshold = highthreshold
+        self.tam_gauss = tam_gauss #tamanho da matriz [AxA] para filtro gauss
+        self.fraca_intensidade = fraca_intensidade
+        self.forte_intensidade = forte_intensidade
         return
 
-    def gaussian_kernel(self, size, sigma=1):
+    def filtro_gauss(self, size, sigma=1): #redução do ruído da imagem
         size = int(size) // 2
         x, y = np.mgrid[-size:size + 1, -size:size + 1]
         normal = 1 / (2.0 * np.pi * sigma ** 2)
-        g = np.exp(-((x ** 2 + y ** 2) / (2.0 * sigma ** 2))) * normal
+        g = np.exp(-((x ** 2 + y ** 2) / (2.0 * sigma ** 2))) * normal #Gaussian filter kernel equation
         return g
 
-    def sobel_filters(self, img):
-        Kx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], np.float32)
-        Ky = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], np.float32)
+    def calc_gradiente(self, img): #calcula o gradiente da img
+        Kx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], np.float32) #sobel filter direção x (horizontal)
+        Ky = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], np.float32) #sobel filter direção y (vertical)
 
-        Ix = ndimage.filters.convolve(img, Kx)
-        Iy = ndimage.filters.convolve(img, Ky)
+        Ix = ndimage.filters.convolve(img, Kx) #derivada x
+        Iy = ndimage.filters.convolve(img, Ky) #derivada y
 
-        G = np.hypot(Ix, Iy)
-        G = G / G.max() * 255
-        theta = np.arctan2(Iy, Ix)
+        G = np.hypot(Ix, Iy) #sqrt(Ix**2 + Iy**2)
+        G = G / G.max() * 255 #normaliza
+        theta = np.arctan2(Iy, Ix) #angulo theta
         return (G, theta)
 
-    def non_max_suppression(self, img, D):
-        M, N = img.shape
-        Z = np.zeros((M, N), dtype=np.int32)
-        angle = D * 180. / np.pi
+    def non_max_suppression(self, img, theta_grad): #afina as arestas encontradas no gradiente da img
+        M, N = img.shape #M = linhas, N = colunas
+        Z = np.zeros((M, N), dtype=np.int32) #matriz de zeros do tamanho da img
+        angle = theta_grad * 180. / np.pi
         angle[angle < 0] += 180
 
         for i in range(1, M - 1):
@@ -53,72 +51,70 @@ class Canny:
                     q = 255
                     r = 255
 
-                    # angle 0
+                    # angulo de 0 graus
                     if (0 <= angle[i, j] < 22.5) or (157.5 <= angle[i, j] <= 180):
                         q = img[i, j + 1]
                         r = img[i, j - 1]
-                    # angle 45
+                    # angulo de 45 graus
                     elif (22.5 <= angle[i, j] < 67.5):
                         q = img[i + 1, j - 1]
                         r = img[i - 1, j + 1]
-                    # angle 90
+                    # angulo de 90 graus
                     elif (67.5 <= angle[i, j] < 112.5):
                         q = img[i + 1, j]
                         r = img[i - 1, j]
-                    # angle 135
+                    # angulo de 135 graus
                     elif (112.5 <= angle[i, j] < 157.5):
                         q = img[i - 1, j - 1]
                         r = img[i + 1, j + 1]
-
+                    # verifica se o pixel possui intensidade maior que o atual
                     if (img[i, j] >= q) and (img[i, j] >= r):
                         Z[i, j] = img[i, j]
                     else:
                         Z[i, j] = 0
-
 
                 except IndexError as e:
                     pass
 
         return Z
 
-    def threshold(self, img):
+    def threshold(self, img): #identifica pixeis com intensidade forte e fraca da img
 
-        highThreshold = img.max() * self.highThreshold;
-        lowThreshold = highThreshold * self.lowThreshold;
+        forte_intensidade = img.max() * self.forte_intensidade;
+        fraca_intensidade = forte_intensidade * self.fraca_intensidade;
 
-        M, N = img.shape
-        res = np.zeros((M, N), dtype=np.int32)
+        M, N = img.shape #M = linhas, N = colunas
+        res = np.zeros((M, N), dtype=np.int32) #matriz de zeros do tamanho da img
 
-        weak = np.int32(self.weak_pixel)
-        strong = np.int32(self.strong_pixel)
+        fraco = np.int32(self.pixel_fraco) #pega o param da classe como ref
+        forte = np.int32(self.pixel_forte)
 
-        strong_i, strong_j = np.where(img >= highThreshold)
-        zeros_i, zeros_j = np.where(img < lowThreshold)
+        pixeis_forte_i, pixeis_forte_j = np.where(img >= forte_intensidade) #acha todos os pixeis fortes da img
+        pixeis_fraco_i, pixeis_fraco_j = np.where((img <= forte_intensidade) & (img >= fraca_intensidade)) #acha todos os pixeis fracos da img
 
-        weak_i, weak_j = np.where((img <= highThreshold) & (img >= lowThreshold))
-
-        res[strong_i, strong_j] = strong
-        res[weak_i, weak_j] = weak
+        res[pixeis_forte_i, pixeis_forte_j] = forte
+        res[pixeis_fraco_i, pixeis_fraco_j] = fraco
 
         return (res)
 
-    def hysteresis(self, img):
+    def hysteresis(self, img): #transforma pixeis em intensidade alta olhando pela sua vizinhança
 
         M, N = img.shape
-        weak = self.weak_pixel
-        strong = self.strong_pixel
+        fraco = self.pixel_fraco
+        forte = self.pixel_forte
 
         for i in range(1, M - 1):
             for j in range(1, N - 1):
-                if (img[i, j] == weak):
+                if (img[i, j] == fraco):
                     try:
-                        if ((img[i + 1, j - 1] == strong) or (img[i + 1, j] == strong) or (img[i + 1, j + 1] == strong)
-                                or (img[i, j - 1] == strong) or (img[i, j + 1] == strong)
-                                or (img[i - 1, j - 1] == strong) or (img[i - 1, j] == strong) or (
-                                        img[i - 1, j + 1] == strong)):
-                            img[i, j] = strong
+                        #se algum pixel ao redor de img[i,j] for forte
+                        if ((img[i + 1, j - 1] == forte) or (img[i + 1, j] == forte) or (img[i + 1, j + 1] == forte)
+                                or (img[i, j - 1] == forte) or (img[i, j + 1] == forte)
+                                or (img[i - 1, j - 1] == forte) or (img[i - 1, j] == forte) 
+                                or (img[i - 1, j + 1] == forte)):
+                            img[i, j] = forte #transforma o pixel img[i,j] em forte
                         else:
-                            img[i, j] = 0
+                            img[i, j] = 0 #se não ignora ele
                     except IndexError as e:
                         pass
 
@@ -127,8 +123,8 @@ class Canny:
     def detect(self):
         imgs_final = []
         for i, img in enumerate(self.imgs):
-            self.img_smoothed = convolve(img, self.gaussian_kernel(self.kernel_size, self.sigma))
-            self.gradientMat, self.thetaMat = self.sobel_filters(self.img_smoothed)
+            self.img_smoothed = convolve(img, self.filtro_gauss(self.tam_gauss, self.sigma))
+            self.gradientMat, self.thetaMat = self.calc_gradiente(self.img_smoothed)
             self.nonMaxImg = self.non_max_suppression(self.gradientMat, self.thetaMat)
             self.thresholdImg = self.threshold(self.nonMaxImg)
             img_final = self.hysteresis(self.thresholdImg)

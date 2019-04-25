@@ -1,14 +1,14 @@
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import os
+import Canny as alg #class Canny
 
-def rgb2gray(rgb):
+def rgb2gray(rgb): #função básica pra converter para tons de cinza
     r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
     gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
-
     return gray
 
-def load_data(dir_name = 'images'):
+def load_data(dir_name = 'images'): #carrega todas as imagens dentro do diretório 'images'
     imgs = []
     for filename in os.listdir(dir_name):
         if os.path.isfile(dir_name + '/' + filename):
@@ -18,7 +18,7 @@ def load_data(dir_name = 'images'):
     return imgs
 
 
-def visualize(imgs, format=None, gray=False):
+def visualize(imgs, format=None, gray=False): #plota imagens
     plt.figure(figsize=(20, 40))
     for i, img in enumerate(imgs):
         if img.shape[0] == 3:
@@ -28,11 +28,9 @@ def visualize(imgs, format=None, gray=False):
         plt.imshow(img, format)
     plt.show()
 
-import Canny as alg
+#INICIA AQUI
+imgs = load_data() #carrega as imagens
 
-imgs = load_data()
-visualize(imgs, 'gray')
-
-detector = alg.Canny(imgs, sigma=1.4, kernel_size=5, lowthreshold=0.09, highthreshold=0.17, weak_pixel=100)
-imgs_final = detector.detect()
-visualize(imgs_final, 'gray')
+detector = alg.Canny(imgs, sigma=1.4, tam_gauss=5, fraca_intensidade=0.10, forte_intensidade=0.20, pixel_fraco=100) #seta os params para a classe
+imgs_final = detector.detect() #recebe imagem resultante
+visualize(imgs_final, 'gray') #exibe
